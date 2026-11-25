@@ -1,0 +1,1091 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Community 360 | Panel Analítico</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+    <script src="/socket.io/socket.io.js"></script>
+</head>
+
+<body>
+    <header class="topbar">
+        <div class="topbar-brand">
+            <div class="topbar-logo" aria-hidden="true">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="9"></circle>
+                    <path d="M12 3a14.5 14.5 0 0 0 0 18 14.5 14.5 0 0 0 0-18"></path>
+                    <path d="M3 12h18"></path>
+                </svg>
+            </div>
+            <div class="topbar-title">
+                <h1>Community 360</h1>
+                <span>Panel Analítico Interactivo · API REST (Turso Cloud)</span>
+            </div>
+        </div>
+
+        <div class="topbar-actions">
+            <div class="ws-pill offline" id="wsStatusPill" title="Estado de la conexión WebSocket">
+                <span class="ws-dot"></span>
+                <span id="wsStatusText">WebSocket: Conectando...</span>
+            </div>
+            <div class="user-chip">
+                <span class="user-avatar" id="userAvatar">AD</span>
+                <span id="adminLabel">Verificando...</span>
+            </div>
+            <button class="btn btn-ghost" id="wsPingBtn" title="Probar comunicación bidireccional WebSocket">⚡ Ping WS</button>
+            <button class="btn btn-ghost" id="refreshBtn">↻ Actualizar</button>
+            <button class="btn btn-danger" id="logoutBtn">Cerrar Sesión</button>
+        </div>
+    </header>
+
+    <main class="dashboard-container">
+        <!-- BARRA DE VISTAS INTERACTIVAS -->
+        <div class="view-bar">
+            <div class="tab-group" role="tablist" aria-label="Vistas del panel">
+                <button class="tab-btn active" data-view="all">Vista Completa</button>
+                <button class="tab-btn" data-view="graficas">Gráficas y Geografía</button>
+                <button class="tab-btn" data-view="riesgo">Usuarios en Riesgo</button>
+                <button class="tab-btn" data-view="historial">Historial Interacciones</button>
+            </div>
+            <span class="view-hint">💡 Haz clic en cualquier barra/segmento de gráfica para filtrar el historial, o en una fila para ver su detalle.</span>
+        </div>
+
+        <!-- 1. KPIs (CLICKEABLES PARA NAVEGAR) -->
+        <section class="kpi-grid">
+            <article class="kpi-card" data-jump="graficas" title="Ver gráficas generales">
+                <div class="kpi-top">
+                    <span class="kpi-label">Usuarios Registrados</span>
+                    <div class="kpi-icon sky">👥</div>
+                </div>
+                <div class="kpi-value" id="kpiUsuarios">--</div>
+                <div class="kpi-sub" id="kpiUsuariosSub">Activos: -- · Inactivos: --</div>
+            </article>
+
+            <article class="kpi-card" data-jump="historial" title="Ir al historial de interacciones">
+                <div class="kpi-top">
+                    <span class="kpi-label">Interacciones Válidas</span>
+                    <div class="kpi-icon indigo">💬</div>
+                </div>
+                <div class="kpi-value" id="kpiInteracciones">--</div>
+                <div class="kpi-sub" id="kpiReaccionesSub">Reacciones totales: --</div>
+            </article>
+
+            <article class="kpi-card" data-jump="graficas" title="Ver polaridad de sentimiento">
+                <div class="kpi-top">
+                    <span class="kpi-label">Sentimiento Promedio</span>
+                    <div class="kpi-icon emerald">📈</div>
+                </div>
+                <div class="kpi-value" id="kpiSentimiento">--</div>
+                <div class="kpi-sub">Escala de -1.0 a +1.0</div>
+            </article>
+
+            <article class="kpi-card" data-jump="riesgo" title="Ver usuarios en riesgo">
+                <div class="kpi-top">
+                    <span class="kpi-label">Usuarios en Riesgo</span>
+                    <div class="kpi-icon amber">⚠️</div>
+                </div>
+                <div class="kpi-value" id="kpiRiesgo">--</div>
+                <div class="kpi-sub">Clic para priorizar moderación</div>
+            </article>
+
+            <article class="kpi-card" data-jump="graficas" title="Ver cumplimiento de privacidad">
+                <div class="kpi-top">
+                    <span class="kpi-label">Privacidad Aplicada</span>
+                    <div class="kpi-icon emerald">🛡️</div>
+                </div>
+                <div class="kpi-value" id="kpiAnonimizados">--</div>
+                <div class="kpi-sub">Sin ubicación (consentimiento = no)</div>
+            </article>
+
+            <article class="kpi-card" data-jump="graficas" title="Ver auditoría ETL y cuarentena">
+                <div class="kpi-top">
+                    <span class="kpi-label">Cuarentena ETL</span>
+                    <div class="kpi-icon rose">🧪</div>
+                </div>
+                <div class="kpi-value" id="kpiCuarentena">--</div>
+                <div class="kpi-sub">Referencias huérfanas auditadas</div>
+            </article>
+        </section>
+
+        <!-- 2. GRÁFICAS PRINCIPALES -->
+        <section class="panels-grid-2" data-section="graficas">
+            <article class="panel">
+                <div class="panel-header">
+                    <div>
+                        <h2 class="panel-title">Actividad por Plataforma</h2>
+                        <p class="panel-subtitle">Clic en una barra para filtrar interacciones por plataforma</p>
+                    </div>
+                    <div class="metric-switch" id="platMetricSwitch">
+                        <button class="metric-btn active" data-metric="total_interacciones">Interacciones</button>
+                        <button class="metric-btn" data-metric="total_reacciones">Reacciones</button>
+                        <button class="metric-btn" data-metric="sentimiento_promedio">Sentimiento</button>
+                    </div>
+                </div>
+                <div class="chart-box">
+                    <canvas id="chartPlataformas"></canvas>
+                </div>
+            </article>
+
+            <article class="panel">
+                <div class="panel-header">
+                    <div>
+                        <h2 class="panel-title">Distribución por Tipo de Interacción</h2>
+                        <p class="panel-subtitle">Clic en un segmento para filtrar por tipo</p>
+                    </div>
+                    <span class="badge badge-indigo">Interactiva</span>
+                </div>
+                <div class="chart-box">
+                    <canvas id="chartTipos"></canvas>
+                </div>
+            </article>
+        </section>
+
+        <section class="panels-grid-2" data-section="graficas">
+            <article class="panel">
+                <div class="panel-header">
+                    <div>
+                        <h2 class="panel-title">Temas de Mayor Interés</h2>
+                        <p class="panel-subtitle">Clic en un tema para filtrar el historial</p>
+                    </div>
+                    <span class="badge badge-sky">Interactiva</span>
+                </div>
+                <div class="chart-box">
+                    <canvas id="chartTemas"></canvas>
+                </div>
+            </article>
+
+            <article class="panel">
+                <div class="panel-header">
+                    <div>
+                        <h2 class="panel-title">Polaridad de Sentimiento</h2>
+                        <p class="panel-subtitle">Positivo (&gt; 0.4), Neutral (-0.4 a 0.4) y Negativo (&lt; -0.4)</p>
+                    </div>
+                    <span class="badge badge-pos" id="sentGlobalBadge">Promedio: --</span>
+                </div>
+                <div class="chart-box">
+                    <canvas id="chartSentimiento"></canvas>
+                </div>
+            </article>
+        </section>
+
+        <!-- 3. MAPA DE CALOR + MONITOR DE EVENTOS WEBSOCKET -->
+        <section class="panels-grid-2" data-section="graficas">
+            <article class="panel">
+                <div class="panel-header">
+                    <div>
+                        <h2 class="panel-title">Mapa de Calor (Plataforma × Tema)</h2>
+                        <p class="panel-subtitle">Intensidad de interacciones en tiempo real (clic en una celda para filtrar)</p>
+                    </div>
+                    <span class="badge badge-indigo">Tiempo Real · WS</span>
+                </div>
+                <div class="table-wrap" style="border:none;">
+                    <table class="heatmap-table" id="heatmapTable">
+                        <tbody><tr><td>Cargando mapa de calor...</td></tr></tbody>
+                    </table>
+                </div>
+            </article>
+
+            <article class="panel">
+                <div class="panel-header">
+                    <div>
+                        <h2 class="panel-title">Monitor de Eventos en Tiempo Real</h2>
+                        <p class="panel-subtitle">Notificaciones push recibidas vía WebSockets al ejecutar POST / PUT / DELETE desde Postman</p>
+                    </div>
+                    <span class="badge badge-pos" id="lastSync">Esperando eventos...</span>
+                </div>
+                <div class="live-feed-list" id="liveFeedList">
+                    <div class="live-event-item">
+                        <span>📡 Escuchando eventos <span class="mono">interaccion:creada</span>, <span class="mono">actualizada</span> y <span class="mono">eliminada</span>...</span>
+                        <span class="badge badge-sky">Listo</span>
+                    </div>
+                </div>
+            </article>
+        </section>
+
+        <!-- 4. GEOGRAFÍA (CON PRIVACIDAD) + AUDITORÍA ETL -->
+        <section class="panels-grid-2" data-section="graficas">
+            <article class="panel">
+                <div class="panel-header">
+                    <div>
+                        <h2 class="panel-title">Distribución Geográfica (Top Ciudades)</h2>
+                        <p class="panel-subtitle">Miembros con ubicación autorizada</p>
+                    </div>
+                    <span class="badge badge-pos">Privacidad Activa</span>
+                </div>
+                <div class="privacy-banner" id="privacyBanner">
+                    🛡️ Verificando cumplimiento de privacidad...
+                </div>
+                <div class="geo-list" id="geoList"></div>
+            </article>
+
+            <article class="panel">
+                <div class="panel-header">
+                    <div>
+                        <h2 class="panel-title">Auditoría ETL y Cuarentena</h2>
+                        <p class="panel-subtitle">Bitácora de calidad de datos cargada en Turso</p>
+                    </div>
+                    <span class="badge badge-amber">etl_bitacora</span>
+                </div>
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Archivo</th>
+                                <th>Recibidos</th>
+                                <th>Aceptados</th>
+                                <th>Transformados</th>
+                                <th>Rechazados</th>
+                            </tr>
+                        </thead>
+                        <tbody id="etlTableBody">
+                            <tr><td colspan="5">Cargando bitácora...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </article>
+        </section>
+
+        <!-- 4. USUARIOS EN RIESGO -->
+        <section class="panel" id="secRiesgo" data-section="riesgo">
+            <div class="panel-header">
+                <div>
+                    <h2 class="panel-title">Usuarios en Riesgo de Abandono</h2>
+                    <p class="panel-subtitle">Busca por alias o plataforma y haz clic en los encabezados para ordenar</p>
+                </div>
+                <div style="display:flex; gap:0.55rem; flex-wrap:wrap; align-items:center;">
+                    <input id="riesgoSearch" class="filter-input" type="search" placeholder="Buscar alias o plataforma..." style="min-width:210px;" />
+                    <select id="riesgoLimit" class="filter-select">
+                        <option value="10">Top 10</option>
+                        <option value="25">Top 25</option>
+                        <option value="50">Top 50</option>
+                    </select>
+                </div>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th class="sortable" data-sort="alias">Alias ↕</th>
+                            <th class="sortable" data-sort="plataforma_principal">Plataforma ↕</th>
+                            <th class="sortable" data-sort="mensajes_30d">Mensajes (30d) ↕</th>
+                            <th class="sortable" data-sort="reacciones_30d">Reacciones (30d) ↕</th>
+                            <th class="sortable" data-sort="sentimiento_promedio">Sentimiento ↕</th>
+                            <th class="sortable" data-sort="ultima_actividad">Última Actividad ↕</th>
+                            <th>Ubicación</th>
+                        </tr>
+                    </thead>
+                    <tbody id="riesgoTableBody">
+                        <tr><td colspan="8">Cargando usuarios en riesgo...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- 5. EXPLORADOR HISTÓRICO DE INTERACCIONES (SOLO LECTURA) -->
+        <section class="panel" id="secHistorial" data-section="historial">
+            <div class="panel-header">
+                <div>
+                    <h2 class="panel-title">Historial de Interacciones</h2>
+                    <p class="panel-subtitle">Haz clic en cualquier fila para inspeccionar el detalle completo</p>
+                </div>
+                <div style="display:flex; gap:0.55rem; align-items:center; flex-wrap:wrap;">
+                    <button class="btn btn-ghost" id="exportCsvBtn">⬇ Exportar CSV</button>
+                    <span class="readonly-note">Solo lectura · CRUD vía Postman</span>
+                </div>
+            </div>
+
+            <div class="filters-bar">
+                <div class="filter-item">
+                    <label for="fPlataforma">Plataforma</label>
+                    <select id="fPlataforma" class="filter-select">
+                        <option value="">Todas</option>
+                    </select>
+                </div>
+                <div class="filter-item">
+                    <label for="fTipo">Tipo</label>
+                    <select id="fTipo" class="filter-select">
+                        <option value="">Todos</option>
+                    </select>
+                </div>
+                <div class="filter-item">
+                    <label for="fTema">Tema</label>
+                    <select id="fTema" class="filter-select">
+                        <option value="">Todos</option>
+                    </select>
+                </div>
+                <div class="filter-item">
+                    <label for="fUsuario">ID Usuario</label>
+                    <input id="fUsuario" class="filter-input" type="text" placeholder="Ej. U000001" />
+                </div>
+                <button class="btn btn-ghost" id="applyFiltersBtn" style="height: 36px;">Aplicar</button>
+                <button class="btn btn-ghost" id="clearFiltersBtn" style="height: 36px;">Limpiar</button>
+            </div>
+
+            <div class="active-filters-strip" id="activeFiltersStrip"></div>
+
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Usuario</th>
+                            <th>Plataforma</th>
+                            <th>Tipo</th>
+                            <th>Tema</th>
+                            <th>Sentimiento</th>
+                            <th>Reacciones</th>
+                            <th>Etiquetas</th>
+                            <th>Fecha (UTC)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="interaccionesTableBody">
+                        <tr><td colspan="9">Cargando interacciones...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="pagination">
+                <span id="paginationInfo">Mostrando 0 de 0 registros</span>
+                <div class="pagination-controls">
+                    <button class="btn btn-ghost" id="prevPageBtn" disabled>← Anterior</button>
+                    <button class="btn btn-ghost" id="nextPageBtn" disabled>Siguiente →</button>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- MODAL DE DETALLE DE INTERACCIÓN (SOLO LECTURA) -->
+    <div class="modal-backdrop" id="detailModal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+        <div class="modal-card">
+            <div class="modal-header">
+                <div>
+                    <h3 id="modalTitle" style="font-size:1.05rem;">Detalle de Interacción</h3>
+                    <span id="modalSubtitle" class="mono" style="color:var(--text-secondary);">--</span>
+                </div>
+                <button class="btn btn-ghost" id="closeModalBtn">✕ Cerrar</button>
+            </div>
+            <div class="modal-grid" id="modalMetaGrid"></div>
+            <div>
+                <span style="display:block; font-size:0.74rem; text-transform:uppercase; color:var(--text-muted); margin-bottom:0.35rem;">Contenido / Texto</span>
+                <div class="detail-text-box" id="modalTextBox">—</div>
+            </div>
+            <div>
+                <span style="display:block; font-size:0.74rem; text-transform:uppercase; color:var(--text-muted); margin-bottom:0.35rem;">Etiquetas</span>
+                <div class="tag-list" id="modalTagsBox"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast-container" id="toastContainer"></div>
+
+    <script>
+        Chart.defaults.color = "#94a3b8";
+        Chart.defaults.borderColor = "rgba(148, 163, 184, 0.12)";
+        Chart.defaults.font.family = '"Inter", "Segoe UI", system-ui, sans-serif';
+
+        const charts = {};
+        const state = {
+            limit: 15,
+            offset: 0,
+            total: 0,
+            currentRows: [],
+            plataformasData: [],
+            platMetric: "total_interacciones",
+            riesgoData: [],
+            riesgoSort: { field: "sentimiento_promedio", asc: true },
+        };
+
+        function showToast(message) {
+            const container = document.getElementById("toastContainer");
+            const el = document.createElement("div");
+            el.className = "toast";
+            el.textContent = message;
+            container.appendChild(el);
+            setTimeout(() => el.remove(), 3200);
+        }
+
+        function animateValue(el, target, isFloat = false) {
+            const duration = 550;
+            const start = performance.now();
+            function tick(now) {
+                const progress = Math.min((now - start) / duration, 1);
+                const eased = 1 - Math.pow(1 - progress, 3);
+                const val = target * eased;
+                if (isFloat) {
+                    el.textContent = (val >= 0 ? "+" : "") + val.toFixed(3);
+                } else {
+                    el.textContent = Math.round(val).toLocaleString("es-MX");
+                }
+                if (progress < 1) requestAnimationFrame(tick);
+            }
+            requestAnimationFrame(tick);
+        }
+
+        async function apiFetch(url) {
+            const res = await fetch(url, { credentials: "include" });
+            if (res.status === 401 || res.status === 403) {
+                window.location.href = "/index.html";
+                throw new Error("No autorizado");
+            }
+            if (!res.ok) throw new Error(`Error HTTP ${res.status}`);
+            return res.json();
+        }
+
+        function sentimentBadge(val) {
+            const num = Number(val);
+            if (num > 0.4) return `<span class="badge badge-pos">+${num.toFixed(2)}</span>`;
+            if (num < -0.4) return `<span class="badge badge-neg">${num.toFixed(2)}</span>`;
+            return `<span class="badge badge-neu">${num.toFixed(2)}</span>`;
+        }
+
+        function formatTopic(str) {
+            return String(str).replace(/_/g, " ");
+        }
+
+        function upsertChart(id, config) {
+            if (charts[id]) charts[id].destroy();
+            charts[id] = new Chart(document.getElementById(id), config);
+        }
+
+        // Navegación por pestañas
+        function setActiveView(view) {
+            document.querySelectorAll(".tab-btn").forEach((b) => {
+                b.classList.toggle("active", b.dataset.view === view);
+            });
+            document.querySelectorAll("[data-section]").forEach((sec) => {
+                if (view === "all") {
+                    sec.classList.remove("section-hidden");
+                } else {
+                    sec.classList.toggle("section-hidden", sec.dataset.section !== view);
+                }
+            });
+        }
+
+        document.querySelectorAll(".tab-btn").forEach((btn) => {
+            btn.addEventListener("click", () => setActiveView(btn.dataset.view));
+        });
+
+        document.querySelectorAll(".kpi-card[data-jump]").forEach((card) => {
+            card.addEventListener("click", () => {
+                const target = card.dataset.jump;
+                setActiveView(target);
+                showToast(`Vista cambiada a: ${target}`);
+            });
+        });
+
+        // Cross-filtering desde gráficas
+        function aplicarFiltroDesdeGrafica(selectId, valor, etiqueta) {
+            document.getElementById(selectId).value = valor;
+            state.offset = 0;
+            setActiveView("all");
+            cargarInteracciones();
+            document.getElementById("secHistorial").scrollIntoView({ behavior: "smooth", block: "start" });
+            showToast(`Filtro aplicado: ${etiqueta} = ${formatTopic(valor)}`);
+        }
+
+        function renderPlataformasChart() {
+            const metric = state.platMetric;
+            const labelsMap = {
+                total_interacciones: { label: "Interacciones", color: "rgba(56, 189, 248, 0.75)", border: "#38bdf8" },
+                total_reacciones: { label: "Reacciones", color: "rgba(129, 140, 248, 0.78)", border: "#818cf8" },
+                sentimiento_promedio: { label: "Sentimiento Promedio", color: "rgba(52, 211, 153, 0.78)", border: "#34d399" },
+            };
+            const meta = labelsMap[metric];
+
+            upsertChart("chartPlataformas", {
+                type: "bar",
+                data: {
+                    labels: state.plataformasData.map((p) => p.plataforma),
+                    datasets: [{
+                        label: meta.label,
+                        data: state.plataformasData.map((p) => p[metric]),
+                        backgroundColor: meta.color,
+                        borderColor: meta.border,
+                        borderWidth: 1,
+                        borderRadius: 8,
+                    }],
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: { y: { beginAtZero: metric !== "sentimiento_promedio" } },
+                    onClick: (_, elements) => {
+                        if (!elements.length) return;
+                        const plat = state.plataformasData[elements[0].index].plataforma;
+                        aplicarFiltroDesdeGrafica("fPlataforma", plat, "Plataforma");
+                    },
+                },
+            });
+        }
+
+        document.querySelectorAll("#platMetricSwitch .metric-btn").forEach((btn) => {
+            btn.addEventListener("click", () => {
+                document.querySelectorAll("#platMetricSwitch .metric-btn").forEach((b) => b.classList.remove("active"));
+                btn.classList.add("active");
+                state.platMetric = btn.dataset.metric;
+                renderPlataformasChart();
+            });
+        });
+
+        async function cargarCatalogos() {
+            const cat = await apiFetch("/api/analitica/catalogos");
+            const fill = (selectId, items) => {
+                const el = document.getElementById(selectId);
+                el.innerHTML = '<option value="">Todos</option>' +
+                    items.map((v) => `<option value="${v}">${formatTopic(v)}</option>`).join("");
+            };
+            fill("fPlataforma", cat.plataformas);
+            fill("fTipo", cat.tipos);
+            fill("fTema", cat.temas);
+        }
+
+        function renderRiesgoTable() {
+            const query = document.getElementById("riesgoSearch").value.trim().toLowerCase();
+            let rows = [...state.riesgoData];
+
+            if (query) {
+                rows = rows.filter((u) =>
+                    u.alias.toLowerCase().includes(query) ||
+                    u.id_usuario.toLowerCase().includes(query) ||
+                    u.plataforma_principal.toLowerCase().includes(query)
+                );
+            }
+
+            const { field, asc } = state.riesgoSort;
+            rows.sort((a, b) => {
+                const va = a[field], vb = b[field];
+                if (typeof va === "number") return asc ? va - vb : vb - va;
+                return asc ? String(va).localeCompare(String(vb)) : String(vb).localeCompare(String(va));
+            });
+
+            document.getElementById("riesgoTableBody").innerHTML = rows.length
+                ? rows.map((u) => `
+                    <tr class="clickable-row" data-userid="${u.id_usuario}" title="Clic para filtrar interacciones de ${u.alias}">
+                        <td class="mono">${u.id_usuario}</td>
+                        <td><strong>${u.alias}</strong></td>
+                        <td><span class="badge badge-sky">${u.plataforma_principal}</span></td>
+                        <td>${u.mensajes_30d}</td>
+                        <td>${u.reacciones_30d}</td>
+                        <td>${sentimentBadge(u.sentimiento_promedio)}</td>
+                        <td class="mono">${u.ultima_actividad}</td>
+                        <td>${u.ubicacion}</td>
+                    </tr>
+                `).join("")
+                : '<tr><td colspan="8">No hay coincidencias con la búsqueda.</td></tr>';
+
+            document.querySelectorAll("#riesgoTableBody tr[data-userid]").forEach((tr) => {
+                tr.addEventListener("click", () => {
+                    document.getElementById("fUsuario").value = tr.dataset.userid;
+                    state.offset = 0;
+                    setActiveView("all");
+                    cargarInteracciones();
+                    document.getElementById("secHistorial").scrollIntoView({ behavior: "smooth" });
+                    showToast(`Filtrando interacciones del usuario ${tr.dataset.userid}`);
+                });
+            });
+        }
+
+        async function cargarUsuariosRiesgo() {
+            const lim = document.getElementById("riesgoLimit").value;
+            state.riesgoData = await apiFetch(`/api/analitica/usuarios-riesgo?limit=${lim}`);
+            renderRiesgoTable();
+        }
+
+        async function cargarAnalitica() {
+            const [resumen, plataformas, tipos, temas, sentimiento, geografia, cuarentena, heatmap] =
+                await Promise.all([
+                    apiFetch("/api/analitica/resumen"),
+                    apiFetch("/api/analitica/plataformas"),
+                    apiFetch("/api/analitica/tipos"),
+                    apiFetch("/api/analitica/temas"),
+                    apiFetch("/api/analitica/sentimiento"),
+                    apiFetch("/api/analitica/geografia"),
+                    apiFetch("/api/analitica/cuarentena"),
+                    apiFetch("/api/analitica/heatmap"),
+                    cargarUsuariosRiesgo(),
+                ]);
+
+            state.plataformasData = plataformas;
+            renderHeatmap(heatmap);
+
+            // KPIs con animación count-up
+            animateValue(document.getElementById("kpiUsuarios"), resumen.total_usuarios);
+            document.getElementById("kpiUsuariosSub").textContent =
+                `Activos: ${resumen.usuarios_activos} · Inactivos: ${resumen.usuarios_inactivos}`;
+            animateValue(document.getElementById("kpiInteracciones"), resumen.total_interacciones);
+            document.getElementById("kpiReaccionesSub").textContent =
+                `Reacciones totales: ${resumen.total_reacciones.toLocaleString("es-MX")}`;
+            animateValue(document.getElementById("kpiSentimiento"), resumen.sentimiento_promedio, true);
+            animateValue(document.getElementById("kpiRiesgo"), resumen.usuarios_en_riesgo);
+            animateValue(document.getElementById("kpiAnonimizados"), resumen.usuarios_anonimizados);
+            animateValue(document.getElementById("kpiCuarentena"), resumen.total_cuarentena);
+
+            renderPlataformasChart();
+
+            // Gráfica 2: Tipos (clickeable)
+            upsertChart("chartTipos", {
+                type: "doughnut",
+                data: {
+                    labels: tipos.map((t) => formatTopic(t.tipo)),
+                    datasets: [{
+                        data: tipos.map((t) => t.total_interacciones),
+                        backgroundColor: ["#38bdf8", "#818cf8", "#34d399", "#fbbf24", "#fb7185"],
+                        borderColor: "#0f172a",
+                        borderWidth: 2,
+                    }],
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    cutout: "62%",
+                    plugins: { legend: { position: "right" } },
+                    onClick: (_, elements) => {
+                        if (!elements.length) return;
+                        const tipo = tipos[elements[0].index].tipo;
+                        aplicarFiltroDesdeGrafica("fTipo", tipo, "Tipo");
+                    },
+                },
+            });
+
+            // Gráfica 3: Temas (clickeable)
+            upsertChart("chartTemas", {
+                type: "bar",
+                data: {
+                    labels: temas.map((t) => formatTopic(t.tema)),
+                    datasets: [{
+                        label: "Interacciones",
+                        data: temas.map((t) => t.total_interacciones),
+                        backgroundColor: "rgba(129, 140, 248, 0.78)",
+                        borderColor: "#818cf8",
+                        borderWidth: 1,
+                        borderRadius: 6,
+                    }],
+                },
+                options: {
+                    indexAxis: "y",
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: { x: { beginAtZero: true } },
+                    onClick: (_, elements) => {
+                        if (!elements.length) return;
+                        const tema = temas[elements[0].index].tema;
+                        aplicarFiltroDesdeGrafica("fTema", tema, "Tema");
+                    },
+                },
+            });
+
+            // Gráfica 4: Sentimiento
+            document.getElementById("sentGlobalBadge").textContent =
+                `Promedio: ${(sentimiento.promedio_global >= 0 ? "+" : "") + sentimiento.promedio_global.toFixed(3)}`;
+            upsertChart("chartSentimiento", {
+                type: "doughnut",
+                data: {
+                    labels: ["Positivo", "Neutral", "Negativo"],
+                    datasets: [{
+                        data: [sentimiento.positivo, sentimiento.neutral, sentimiento.negativo],
+                        backgroundColor: ["#34d399", "#94a3b8", "#fb7185"],
+                        borderColor: "#0f172a",
+                        borderWidth: 2,
+                    }],
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    cutout: "62%",
+                    plugins: { legend: { position: "right" } },
+                },
+            });
+
+            // Geografía
+            document.getElementById("privacyBanner").textContent =
+                `🛡️ ${geografia.usuarios_excluidos_privacidad} usuarios sin consentimiento fueron excluidos de toda visualización geográfica.`;
+
+            const maxGeo = Math.max(...geografia.top_ciudades.map((c) => c.total_usuarios), 1);
+            document.getElementById("geoList").innerHTML = geografia.top_ciudades.slice(0, 7).map((c) => {
+                const pct = Math.round((c.total_usuarios / maxGeo) * 100);
+                return `
+                    <div class="geo-row">
+                        <div class="geo-row-top">
+                            <span><strong>${c.ciudad}</strong> · <span style="color:var(--text-secondary)">${c.estado}, ${c.pais}</span></span>
+                            <span class="mono">${c.total_usuarios}</span>
+                        </div>
+                        <div class="geo-bar-track">
+                            <div class="geo-bar-fill" style="width:${pct}%"></div>
+                        </div>
+                    </div>
+                `;
+            }).join("");
+
+            // Bitácora ETL
+            document.getElementById("etlTableBody").innerHTML = cuarentena.bitacora.length
+                ? cuarentena.bitacora.map((b) => `
+                    <tr>
+                        <td class="mono">${b.archivo}</td>
+                        <td>${b.recibidos}</td>
+                        <td><span class="badge badge-pos">${b.aceptados}</span></td>
+                        <td>${b.transformados}</td>
+                        <td><span class="badge ${b.rechazados > 0 ? "badge-neg" : "badge-neu"}">${b.rechazados}</span></td>
+                    </tr>
+                `).join("")
+                : '<tr><td colspan="5">Sin ejecuciones registradas.</td></tr>';
+
+            document.getElementById("lastSync").textContent =
+                `Actualizado ${new Date().toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`;
+        }
+
+        function renderActiveFilterChips() {
+            const strip = document.getElementById("activeFiltersStrip");
+            const active = [
+                { id: "fPlataforma", label: "Plataforma", val: document.getElementById("fPlataforma").value },
+                { id: "fTipo", label: "Tipo", val: document.getElementById("fTipo").value },
+                { id: "fTema", label: "Tema", val: document.getElementById("fTema").value },
+                { id: "fUsuario", label: "Usuario", val: document.getElementById("fUsuario").value.trim() },
+            ].filter((f) => f.val);
+
+            if (!active.length) {
+                strip.classList.remove("visible");
+                strip.innerHTML = "";
+                return;
+            }
+
+            strip.classList.add("visible");
+            strip.innerHTML = active.map((f) => `
+                <span class="filter-chip">
+                    ${f.label}: ${formatTopic(f.val)}
+                    <button type="button" data-clear="${f.id}" title="Quitar filtro">×</button>
+                </span>
+            `).join("");
+
+            strip.querySelectorAll("button[data-clear]").forEach((btn) => {
+                btn.addEventListener("click", () => {
+                    document.getElementById(btn.dataset.clear).value = "";
+                    state.offset = 0;
+                    cargarInteracciones();
+                });
+            });
+        }
+
+        async function abrirDetalleInteraccion(idInteraccion) {
+            try {
+                const d = await apiFetch(`/api/interacciones/${encodeURIComponent(idInteraccion)}`);
+                document.getElementById("modalSubtitle").textContent = `${d.id_interaccion} · ${d.timestamp}`;
+                document.getElementById("modalMetaGrid").innerHTML = `
+                    <div class="detail-item"><span>Usuario</span><strong>${d.usuario_alias} (${d.id_usuario})</strong></div>
+                    <div class="detail-item"><span>Plataforma</span><strong>${d.plataforma}</strong></div>
+                    <div class="detail-item"><span>Tipo / Tema</span><strong>${formatTopic(d.tipo)} · ${formatTopic(d.tema)}</strong></div>
+                    <div class="detail-item"><span>Dispositivo / Idioma</span><strong>${d.dispositivo} · ${d.idioma.toUpperCase()}</strong></div>
+                    <div class="detail-item"><span>Sentimiento</span><div>${sentimentBadge(d.sentimiento)}</div></div>
+                    <div class="detail-item"><span>Reacciones / Longitud</span><strong>${d.reacciones_recibidas} reacciones · ${d.longitud_texto} chars</strong></div>
+                `;
+                document.getElementById("modalTextBox").textContent =
+                    d.texto ? d.texto : "(Sin texto — interacción tipo reacción o sin contenido textual)";
+                document.getElementById("modalTagsBox").innerHTML = d.etiquetas.length
+                    ? d.etiquetas.map((t) => `<span class="tag-pill">#${t}</span>`).join("")
+                    : '<span style="color:var(--text-muted); font-size:0.82rem;">Sin etiquetas</span>';
+
+                document.getElementById("detailModal").classList.add("open");
+            } catch {
+                showToast("No se pudo cargar el detalle de la interacción.");
+            }
+        }
+
+        async function cargarInteracciones() {
+            renderActiveFilterChips();
+            const params = new URLSearchParams({ limit: state.limit, offset: state.offset });
+            const plat = document.getElementById("fPlataforma").value;
+            const tipo = document.getElementById("fTipo").value;
+            const tema = document.getElementById("fTema").value;
+            const usr = document.getElementById("fUsuario").value.trim();
+
+            if (plat) params.set("plataforma", plat);
+            if (tipo) params.set("tipo", tipo);
+            if (tema) params.set("tema", tema);
+            if (usr) params.set("id_usuario", usr);
+
+            const res = await apiFetch(`/api/interacciones?${params.toString()}`);
+            state.total = res.total;
+            state.currentRows = res.data;
+
+            const tbody = document.getElementById("interaccionesTableBody");
+            if (!res.data.length) {
+                tbody.innerHTML = '<tr><td colspan="9">No se encontraron interacciones con los filtros seleccionados.</td></tr>';
+            } else {
+                tbody.innerHTML = res.data.map((i) => `
+                    <tr class="clickable-row" data-id="${i.id_interaccion}">
+                        <td class="mono">${i.id_interaccion}</td>
+                        <td><strong>${i.usuario_alias}</strong> <span class="mono" style="color:var(--text-muted)">(${i.id_usuario})</span></td>
+                        <td><span class="badge badge-sky">${i.plataforma}</span></td>
+                        <td>${formatTopic(i.tipo)}</td>
+                        <td>${formatTopic(i.tema)}</td>
+                        <td>${sentimentBadge(i.sentimiento)}</td>
+                        <td>${i.reacciones_recibidas}</td>
+                        <td>
+                            <div class="tag-list">
+                                ${i.etiquetas.length ? i.etiquetas.map((t) => `<span class="tag-pill">#${t}</span>`).join("") : '<span style="color:var(--text-muted)">—</span>'}
+                            </div>
+                        </td>
+                        <td class="mono">${i.timestamp.replace("T", " ").replace("Z", "")}</td>
+                    </tr>
+                `).join("");
+
+                tbody.querySelectorAll("tr[data-id]").forEach((tr) => {
+                    tr.addEventListener("click", () => abrirDetalleInteraccion(tr.dataset.id));
+                });
+            }
+
+            const inicio = res.total === 0 ? 0 : state.offset + 1;
+            const fin = Math.min(state.offset + state.limit, res.total);
+            document.getElementById("paginationInfo").textContent =
+                `Mostrando ${inicio}–${fin} de ${res.total} interacciones`;
+            document.getElementById("prevPageBtn").disabled = state.offset === 0;
+            document.getElementById("nextPageBtn").disabled = state.offset + state.limit >= res.total;
+        }
+
+        // Exportar tabla actual a CSV (solo lectura)
+        document.getElementById("exportCsvBtn").addEventListener("click", () => {
+            if (!state.currentRows.length) {
+                showToast("No hay datos visibles para exportar.");
+                return;
+            }
+            const headers = ["id_interaccion", "id_usuario", "usuario_alias", "plataforma", "tipo", "tema", "sentimiento", "reacciones_recibidas", "etiquetas", "timestamp"];
+            const csv = [
+                headers.join(","),
+                ...state.currentRows.map((r) => [
+                    r.id_interaccion,
+                    r.id_usuario,
+                    `"${String(r.usuario_alias).replace(/"/g, '""')}"`,
+                    r.plataforma,
+                    r.tipo,
+                    r.tema,
+                    r.sentimiento,
+                    r.reacciones_recibidas,
+                    `"${r.etiquetas.join("|")}"`,
+                    r.timestamp,
+                ].join(",")),
+            ].join("\n");
+
+            const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `community360_interacciones_${new Date().toISOString().slice(0, 10)}.csv`;
+            a.click();
+            URL.revokeObjectURL(url);
+            showToast("CSV exportado correctamente.");
+        });
+
+        // Ordenamiento y búsqueda en Usuarios en Riesgo
+        document.querySelectorAll("th.sortable").forEach((th) => {
+            th.addEventListener("click", () => {
+                const field = th.dataset.sort;
+                if (state.riesgoSort.field === field) {
+                    state.riesgoSort.asc = !state.riesgoSort.asc;
+                } else {
+                    state.riesgoSort = { field, asc: true };
+                }
+                renderRiesgoTable();
+            });
+        });
+
+        document.getElementById("riesgoSearch").addEventListener("input", renderRiesgoTable);
+        document.getElementById("riesgoLimit").addEventListener("change", cargarUsuariosRiesgo);
+
+        // Eventos del Modal
+        const modal = document.getElementById("detailModal");
+        document.getElementById("closeModalBtn").addEventListener("click", () => modal.classList.remove("open"));
+        modal.addEventListener("click", (e) => {
+            if (e.target === modal) modal.classList.remove("open");
+        });
+        document.addEventListener("keydown", (e) => {
+            if (e.key === "Escape") modal.classList.remove("open");
+        });
+
+        function renderHeatmap(heatmap) {
+            const lookup = new Map();
+            let maxVal = 1;
+            heatmap.celdas.forEach((c) => {
+                lookup.set(`${c.plataforma}__${c.tema}`, c);
+                if (c.total_interacciones > maxVal) maxVal = c.total_interacciones;
+            });
+
+            const headerHtml = `<thead><tr><th></th>${heatmap.temas
+                .map((t) => `<th>${formatTopic(t).split(" ")[0]}</th>`)
+                .join("")}</tr></thead>`;
+
+            const bodyHtml = `<tbody>${heatmap.plataformas
+                .map((plat) => {
+                    const cells = heatmap.temas
+                        .map((tema) => {
+                            const info = lookup.get(`${plat}__${tema}`);
+                            const count = info ? info.total_interacciones : 0;
+                            const ratio = count / maxVal;
+                            const alpha = count === 0 ? 0.08 : (0.2 + ratio * 0.72).toFixed(2);
+                            const bg = count === 0
+                                ? "rgba(148, 163, 184, 0.08)"
+                                : `rgba(56, 189, 248, ${alpha})`;
+                            const title = `${plat} × ${formatTopic(tema)}: ${count} interacciones` +
+                                (info ? ` (sentimiento prom: ${info.sentimiento_promedio})` : "");
+                            return `<td><div class="heatmap-cell" style="background:${bg}" data-plat="${plat}" data-tema="${tema}" title="${title}">${count}</div></td>`;
+                        })
+                        .join("");
+                    return `<tr><th class="row-head">${plat}</th>${cells}</tr>`;
+                })
+                .join("")}</tbody>`;
+
+            const tbl = document.getElementById("heatmapTable");
+            tbl.innerHTML = headerHtml + bodyHtml;
+            tbl.querySelectorAll(".heatmap-cell").forEach((cell) => {
+                cell.addEventListener("click", () => {
+                    document.getElementById("fPlataforma").value = cell.dataset.plat;
+                    document.getElementById("fTema").value = cell.dataset.tema;
+                    state.offset = 0;
+                    setActiveView("all");
+                    cargarInteracciones();
+                    document.getElementById("secHistorial").scrollIntoView({ behavior: "smooth" });
+                    showToast(`Heatmap: ${cell.dataset.plat} × ${formatTopic(cell.dataset.tema)}`);
+                });
+            });
+        }
+
+        function registrarEventoVivo(tipoBadge, claseBadge, descripcion) {
+            const list = document.getElementById("liveFeedList");
+            const hora = new Date().toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+            const item = document.createElement("div");
+            item.className = "live-event-item";
+            item.innerHTML = `
+                <span><span class="badge ${claseBadge}">${tipoBadge}</span> ${descripcion}</span>
+                <span class="mono" style="color:var(--text-secondary)">${hora}</span>
+            `;
+            list.prepend(item);
+            while (list.children.length > 12) list.lastElementChild.remove();
+        }
+
+        let socket = null;
+        function conectarWebSocket() {
+            if (typeof io === "undefined") return;
+            socket = io({ withCredentials: true });
+
+            const pill = document.getElementById("wsStatusPill");
+            const text = document.getElementById("wsStatusText");
+
+            socket.on("connect", () => {
+                pill.classList.remove("offline");
+                text.textContent = "WebSocket: En vivo";
+            });
+
+            socket.on("ws:conectado", (data) => {
+                registrarEventoVivo("CONECTADO", "badge-pos", `Sesión en tiempo real activa (${data.usuario})`);
+            });
+
+            socket.on("disconnect", () => {
+                pill.classList.add("offline");
+                text.textContent = "WebSocket: Reconectando...";
+            });
+
+            socket.on("interaccion:creada", async ({ interaccion }) => {
+                registrarEventoVivo(
+                    "POST · NUEVA",
+                    "badge-pos",
+                    `<span class="mono">${interaccion.id_interaccion}</span> · ${interaccion.plataforma} / ${formatTopic(interaccion.tema)} (sent: ${interaccion.sentimiento})`
+                );
+                showToast(`Nueva interacción en tiempo real: ${interaccion.id_interaccion}`);
+                await Promise.all([cargarAnalitica(), cargarInteracciones()]);
+            });
+
+            socket.on("interaccion:actualizada", async ({ interaccion }) => {
+                registrarEventoVivo(
+                    "PUT · EDITADA",
+                    "badge-amber",
+                    `<span class="mono">${interaccion.id_interaccion}</span> · ${interaccion.plataforma} / ${formatTopic(interaccion.tema)} (sent: ${interaccion.sentimiento})`
+                );
+                showToast(`Interacción actualizada en vivo: ${interaccion.id_interaccion}`);
+                await Promise.all([cargarAnalitica(), cargarInteracciones()]);
+            });
+
+            socket.on("interaccion:eliminada", async ({ id_interaccion }) => {
+                registrarEventoVivo(
+                    "DELETE · ELIMINADA",
+                    "badge-neg",
+                    `Interacción <span class="mono">${id_interaccion}</span> eliminada del sistema`
+                );
+                showToast(`Interacción eliminada en vivo: ${id_interaccion}`);
+                await Promise.all([cargarAnalitica(), cargarInteracciones()]);
+            });
+        }
+
+        document.getElementById("wsPingBtn").addEventListener("click", () => {
+            if (!socket || !socket.connected) {
+                showToast("WebSocket desconectado.");
+                return;
+            }
+            const t0 = performance.now();
+            socket.emit("cliente:ping", { origen: "dashboard_admin" }, (resp) => {
+                const ms = Math.round(performance.now() - t0);
+                registrarEventoVivo("PING ↔ PONG", "badge-sky", `Respuesta bidireccional en ${ms} ms · Clientes: ${resp.clientes_activos}`);
+                showToast(`WebSocket bidireccional OK (${ms} ms)`);
+            });
+        });
+
+        async function init() {
+            try {
+                const authData = await apiFetch("/api/auth/me");
+                const uname = authData.usuario.username || "admin";
+                document.getElementById("adminLabel").textContent = `${uname} (${authData.usuario.rol})`;
+                document.getElementById("userAvatar").textContent = uname.slice(0, 2).toUpperCase();
+
+                await cargarCatalogos();
+                await Promise.all([cargarAnalitica(), cargarInteracciones()]);
+                conectarWebSocket();
+            } catch (err) {
+                console.error(err);
+            }
+        }
+
+        document.getElementById("refreshBtn").addEventListener("click", async () => {
+            await Promise.all([cargarAnalitica(), cargarInteracciones()]);
+            showToast("Datos actualizados desde Turso Cloud.");
+        });
+
+        document.getElementById("applyFiltersBtn").addEventListener("click", () => {
+            state.offset = 0;
+            cargarInteracciones();
+        });
+
+        document.getElementById("clearFiltersBtn").addEventListener("click", () => {
+            document.getElementById("fPlataforma").value = "";
+            document.getElementById("fTipo").value = "";
+            document.getElementById("fTema").value = "";
+            document.getElementById("fUsuario").value = "";
+            state.offset = 0;
+            cargarInteracciones();
+            showToast("Filtros limpiados.");
+        });
+
+        document.getElementById("prevPageBtn").addEventListener("click", () => {
+            state.offset = Math.max(0, state.offset - state.limit);
+            cargarInteracciones();
+        });
+
+        document.getElementById("nextPageBtn").addEventListener("click", () => {
+            if (state.offset + state.limit < state.total) {
+                state.offset += state.limit;
+                cargarInteracciones();
+            }
+        });
+
+        document.getElementById("logoutBtn").addEventListener("click", async () => {
+            await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
+            window.location.href = "/index.html";
+        });
+
+        init();
+    </script>
+</body>
+
+</html>

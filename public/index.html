@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Community 360 | Acceso Administrador</title>
+    <link rel="stylesheet" href="/styles.css" />
+</head>
+
+<body class="login-page">
+    <div id="loginBgPhoto" class="login-bg-photo" aria-hidden="true"></div>
+    <div class="login-bubbles" aria-hidden="true">
+        <span class="glass-bubble b1"></span>
+        <span class="glass-bubble b2"></span>
+        <span class="glass-bubble b3"></span>
+        <span class="glass-bubble b4"></span>
+        <span class="glass-bubble b5"></span>
+        <span class="glass-bubble b6"></span>
+        <span class="glass-bubble b7"></span>
+    </div>
+    <div class="login-bg-scrim" aria-hidden="true"></div>
+
+    <main class="login-shell">
+        <section class="login-card">
+            <div class="brand-header">
+                <div class="brand-logo" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="9"></circle>
+                        <path d="M12 3a14.5 14.5 0 0 0 0 18 14.5 14.5 0 0 0 0-18"></path>
+                        <path d="M3 12h18"></path>
+                    </svg>
+                </div>
+                <span class="welcome-greeting" id="greetingText">Bienvenido al centro de control</span>
+                <h1>Community 360</h1>
+                <p>Inteligencia y analítica comunitaria en la nube</p>
+                <div class="status-pill">
+                    <span class="status-dot"></span>
+                    Turso Cloud · Sesión Segura JWT
+                </div>
+            </div>
+
+            <form id="loginForm" autocomplete="on">
+                <div class="form-group">
+                    <label for="username">Usuario o correo</label>
+                    <input class="input-field" type="text" id="username" name="username" placeholder="Ej. lizandro.reyes" required autofocus />
+                </div>
+
+                <div class="form-group">
+                    <label for="password">Contraseña</label>
+                    <div class="input-wrap">
+                        <input class="input-field" type="password" id="password" name="password" placeholder="••••••••••••" required style="padding-right: 4.5rem;" />
+                        <button type="button" class="toggle-pwd" id="togglePwd">Mostrar</button>
+                    </div>
+                </div>
+
+                <button type="submit" class="btn btn-primary" id="submitBtn">Entrar al Panel</button>
+                <div id="error" class="alert-error" role="alert"></div>
+            </form>
+
+            <div class="login-features">
+                <span class="feature-chip">📊 Analítica REST</span>
+                <span class="feature-chip">🛡️ Privacidad Activa</span>
+                <span class="feature-chip">☁️ Persistencia Cloud</span>
+            </div>
+
+            <div class="login-footer">
+                Acceso exclusivo para administradores y moderadores autorizados.
+            </div>
+        </section>
+    </main>
+
+    <script>
+        // Saludo dinámico según la hora del día
+        const hora = new Date().getHours();
+        const saludo = hora < 12 ? "Buenos días, Administrador" : hora < 19 ? "Buenas tardes, Administrador" : "Buenas noches, Administrador";
+        document.getElementById("greetingText").textContent = saludo;
+
+        fetch("/api/auth/me", { credentials: "include" })
+            .then((res) => {
+                if (res.ok) window.location.href = "/dashboard.html";
+            })
+            .catch(() => {});
+
+        const pwdInput = document.getElementById("password");
+        const togglePwd = document.getElementById("togglePwd");
+        togglePwd.addEventListener("click", () => {
+            const visible = pwdInput.type === "text";
+            pwdInput.type = visible ? "password" : "text";
+            togglePwd.textContent = visible ? "Mostrar" : "Ocultar";
+        });
+
+        document.getElementById("loginForm").addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const errorDiv = document.getElementById("error");
+            const submitBtn = document.getElementById("submitBtn");
+            errorDiv.classList.remove("visible");
+            errorDiv.textContent = "";
+
+            const username = document.getElementById("username").value.trim();
+            const password = pwdInput.value;
+
+            submitBtn.disabled = true;
+            submitBtn.textContent = "Verificando credenciales...";
+
+            try {
+                const res = await fetch("/api/auth/login", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    credentials: "include",
+                    body: JSON.stringify({ username, password }),
+                });
+
+                const data = await res.json();
+                if (!res.ok) {
+                    errorDiv.textContent = data.error || "Credenciales incorrectas.";
+                    errorDiv.classList.add("visible");
+                    return;
+                }
+
+                window.location.href = "/dashboard.html";
+            } catch {
+                errorDiv.textContent = "No se pudo conectar con el servidor.";
+                errorDiv.classList.add("visible");
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = "Entrar al Panel";
+            }
+        });
+    </script>
+</body>
+
+</html>
