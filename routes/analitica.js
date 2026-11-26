@@ -139,21 +139,21 @@ router.get("/tipos", async (req, res) => {
     }
 });
 
-// 5. Polaridad de sentimiento (umbral simétrico ±0.4 sobre escala [-1.0, +1.0])
+// 5. Polaridad de sentimiento (Negativo < 0, Neutral 0 a 0.4, Positivo > 0.4)
 router.get("/sentimiento", async (req, res) => {
     try {
         const result = await db.execute(`
             SELECT
                 SUM(CASE WHEN sentimiento > 0.4 THEN 1 ELSE 0 END) AS positivo,
-                SUM(CASE WHEN sentimiento >= -0.4 AND sentimiento <= 0.4 THEN 1 ELSE 0 END) AS neutral,
-                SUM(CASE WHEN sentimiento < -0.4 THEN 1 ELSE 0 END) AS negativo,
+                SUM(CASE WHEN sentimiento >= 0 AND sentimiento <= 0.4 THEN 1 ELSE 0 END) AS neutral,
+                SUM(CASE WHEN sentimiento < 0 THEN 1 ELSE 0 END) AS negativo,
                 ROUND(COALESCE(AVG(sentimiento), 0), 3) AS promedio_global
             FROM interacciones
         `);
 
         const r = result.rows[0];
         res.status(200).json({
-            umbral_neutral: 0.4,
+            criterio: { positivo: "> 0.4", neutral: "0 a 0.4", negativo: "< 0" },
             positivo: Number(r.positivo || 0),
             neutral: Number(r.neutral || 0),
             negativo: Number(r.negativo || 0),
