@@ -22,14 +22,13 @@
             </div>
             <div class="topbar-title">
                 <h1>Community 360</h1>
-                <span>Panel Analítico Interactivo · API REST (Turso Cloud)</span>
             </div>
         </div>
 
         <div class="topbar-actions">
-            <div class="ws-pill offline" id="wsStatusPill" title="Estado de la conexión WebSocket">
+            <div class="ws-pill offline" id="wsStatusPill" title="Estado de la conexión WS">
                 <span class="ws-dot"></span>
-                <span id="wsStatusText">WebSocket: Conectando...</span>
+                <span id="wsStatusText">WS: Conectando...</span>
             </div>
             <div class="user-chip">
                 <span class="user-avatar" id="userAvatar">AD</span>
@@ -192,7 +191,6 @@
                 <div class="panel-header">
                     <div>
                         <h2 class="panel-title">Monitor de Eventos en Tiempo Real</h2>
-                        <p class="panel-subtitle">Notificaciones push recibidas vía WebSockets al ejecutar POST / PUT / DELETE desde Postman</p>
                     </div>
                     <span class="badge badge-pos" id="lastSync">Esperando eventos...</span>
                 </div>
@@ -294,7 +292,6 @@
                 </div>
                 <div style="display:flex; gap:0.55rem; align-items:center; flex-wrap:wrap;">
                     <button class="btn btn-ghost" id="exportCsvBtn">⬇ Exportar CSV</button>
-                    <span class="readonly-note">Solo lectura · CRUD vía Postman</span>
                 </div>
             </div>
 
@@ -976,7 +973,7 @@
 
             socket.on("connect", () => {
                 pill.classList.remove("offline");
-                text.textContent = "WebSocket: En vivo";
+                text.textContent = "WS: En vivo";
             });
 
             socket.on("ws:conectado", (data) => {
@@ -985,12 +982,12 @@
 
             socket.on("disconnect", () => {
                 pill.classList.add("offline");
-                text.textContent = "WebSocket: Reconectando...";
+                text.textContent = "WS: Reconectando...";
             });
 
             socket.on("interaccion:creada", async ({ interaccion }) => {
                 registrarEventoVivo(
-                    "POST · NUEVA",
+                    "NUEVA",
                     "badge-pos",
                     `<span class="mono">${interaccion.id_interaccion}</span> · ${interaccion.plataforma} / ${formatTopic(interaccion.tema)} (sent: ${interaccion.sentimiento})`
                 );
@@ -1000,7 +997,7 @@
 
             socket.on("interaccion:actualizada", async ({ interaccion }) => {
                 registrarEventoVivo(
-                    "PUT · EDITADA",
+                    "ACTUALIZADA",
                     "badge-amber",
                     `<span class="mono">${interaccion.id_interaccion}</span> · ${interaccion.plataforma} / ${formatTopic(interaccion.tema)} (sent: ${interaccion.sentimiento})`
                 );
@@ -1010,7 +1007,7 @@
 
             socket.on("interaccion:eliminada", async ({ id_interaccion }) => {
                 registrarEventoVivo(
-                    "DELETE · ELIMINADA",
+                    "ELIMINADA",
                     "badge-neg",
                     `Interacción <span class="mono">${id_interaccion}</span> eliminada del sistema`
                 );
